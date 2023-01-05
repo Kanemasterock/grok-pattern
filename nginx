@@ -1,0 +1,1 @@
+event log : 10.x.x.195 - - [23/Nov/2022:12:37:53 +0100] "POST /sitename/login HTTP/1.1" 200 19 "https://abcde.exemple.net/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
