@@ -1,1 +1,15 @@
 event log : 10.x.x.195 - - [23/Nov/2022:12:37:53 +0100] "POST /sitename/login HTTP/1.1" 200 19 "https://abcde.exemple.net/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+### grok pattern
+
+  grok {
+    match => {
+      "message" => [
+        "%{IPORHOST:IP} - - \[%{HTTPDATE:[event][created]}\] (?<a>.)%{WORD:[http][method]} /%{DATA:[server][name]}/%{DATA:event_action} %{WORD:proto}/%{NUMBER:httpversion}(?<b>.) %{NUMBER:response} %{NUMBER:bytes} (?<c>.)%{URI:url}(?<d>.) (?<e>.)%{GREEDYDATA:[navigator][useragent]}(?<f>.)",
+        "\[%{HTTPDATE:timestamp}\] (?<a>.)%{WORD:method} /%{DATA:site}/%{DATA:event_action} %{WORD:proto}/%{NUMBER:httpversion}(?<b>.) %{NUMBER:response} %{NUMBER:bytes} (?<c>.)%{URI:url}(?<d>.) (?<e>.)%{GREEDYDATA:[navigator][useragent]}(?<b>.)",
+        "%{DATESTAMP:mydate} \[%{DATA:severity}\] %{GREEDYDATA:mymessage}",
+        "%{HTTPDATE:mydate} %{GREEDYDATA:mymessage}",
+        "%{YEAR:yy}/%{MONTHNUM:mm}/%{MONTHDAY:dd} %{TIME:time} \[%{DATA:severity}\] (%{NUMBER:pid:int}#%{NUMBER:threadid}: \*%{NUMBER:connectionid}|\*%{NUMBER}) %{DATA} %{DATA:event_outcome} %{GREEDYDATA:mymessage}"-+
+      ]
+    }
+     add_tag => ["nginx_error_pattern"]
+    }
