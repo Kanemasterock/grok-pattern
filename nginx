@@ -1,15 +1,68 @@
-event log : 10.x.x.195 - - [23/Nov/2022:12:37:53 +0100] "POST /sitename/login HTTP/1.1" 200 19 "https://abcde.exemple.net/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
-### grok pattern
-
-  grok {
+grok {
     match => {
       "message" => [
-        "%{IPORHOST:IP} - - \[%{HTTPDATE:[event][created]}\] (?<a>.)%{WORD:[http][method]} /%{DATA:[server][name]}/%{DATA:event_action} %{WORD:proto}/%{NUMBER:httpversion}(?<b>.) %{NUMBER:response} %{NUMBER:bytes} (?<c>.)%{URI:url}(?<d>.) (?<e>.)%{GREEDYDATA:[navigator][useragent]}(?<f>.)",
-        "\[%{HTTPDATE:timestamp}\] (?<a>.)%{WORD:method} /%{DATA:site}/%{DATA:event_action} %{WORD:proto}/%{NUMBER:httpversion}(?<b>.) %{NUMBER:response} %{NUMBER:bytes} (?<c>.)%{URI:url}(?<d>.) (?<e>.)%{GREEDYDATA:[navigator][useragent]}(?<b>.)",
-        "%{DATESTAMP:mydate} \[%{DATA:severity}\] %{GREEDYDATA:mymessage}",
-        "%{HTTPDATE:mydate} %{GREEDYDATA:mymessage}",
-        "%{YEAR:yy}/%{MONTHNUM:mm}/%{MONTHDAY:dd} %{TIME:time} \[%{DATA:severity}\] (%{NUMBER:pid:int}#%{NUMBER:threadid}: \*%{NUMBER:connectionid}|\*%{NUMBER}) %{DATA} %{DATA:event_outcome} %{GREEDYDATA:mymessage}"-+
+        "%{IPORHOST:[client][ip]} - - \[%{HTTPDATE:time}\] (?<a>.)%{WORD:[http][method]} /%{DATA:[server][name]}/%{DATA:[event][action]} %{WORD:proto}/%{NUMBER:httpversion}(?<b>.) %{NUMBER:response} %{NUMBER:bytes} (?<c>.)%{URI:url}(?<d>.) (?<e>.)%{GREEDYDATA:[navigator][useragent]}(?<f>.)",
+        "\[%{HTTPDATE:[event][created]}\] (?<a>.)%{WORD:method} /%{DATA:site}/%{DATA:[event][action]} %{WORD:proto}/%{NUMBER:httpversion}(?<b>.) %{NUMBER:response} %{NUMBER:bytes} (?<c>.)%{URI:url}(?<d>.) (?<e>.)%{GREEDYDATA:[navigator][useragent]}(?<b>.)",
+        "%{DATESTAMP:[event][created]} \[%{DATA:[event][severity]}\] (%{NUMBER:pid:int}#%{NUMBER:threadid}: \*%{NUMBER:[http][request][bytes]}|\*%{NUMBER}) %{DATA:[event][action]}\(\) %{DATA:[event][outcome]} %{GREEDYDATA:mymessage}",
+        #"%{YEAR:yy}/%{MONTHNUM:mm}/%{MONTHDAY:dd} %{TIME:time} \[%{DATA:severity}\] (%{NUMBER:pid:int}#%{NUMBER:threadid}: \*%{NUMBER:connectionid}|\*%{NUMBER}) %{DATA} %{DATA:event_outcome} %{GREEDYDATA:mymessage}",
+        "%{DATESTAMP:[event][created]} \[%{DATA:[event][severity]}\] %{GREEDYDATA:mymessage}",
+        "%{HTTPDATE:[event][created]} %{GREEDYDATA:mymessage}"
       ]
     }
-     add_tag => ["nginx_error_pattern"]
+  }
+  if "_grokparsefailure" in[tags]
+    {
+      mutate { add_field => { "[event][error][message]" => "nginx event grok parse failure "} }
     }
+  else {
+  if [mymessage] {
+    grok {match => { "mymessage" => "%{DATA:[error][message]}, %{GREEDYDATA:originalmessage}" }}
+    kv {
+      value_split => ":"
+      source => "originalmessage"
+      target => "kv"
+    }
+    mutate {
+      rename => {
+        "[kv][client]" => "[client][ip]"
+        "[kv][server]" => "[server][domain]"
+        "[kv][request]" => "[http][request][method]"
+        "[kv][referrer]" => "[http][request][referrer]"
+        "[kv][upstream]" => "[http][request][upstream]"
+        "[kv][host]" => "[host][domain]"
+        "threadid" => "[process][thread][id]"
+
+       }
+  }
+  if [server][domain] {
+    grok {match => { "[server][domain]" => "%{IP:[server][ip]}, %{NUMBER:[server][port]}" }}
+    if "_grokparsefailure" in[tags]
+    { mutate { add_field => { "[event][error][message]" => "server domain not a IP grok parse failure "} }}
+  }
+  }
+  date {
+    match => [ "[event][created]", "dd/MM/YYYY:hh:mm:ss", "YY/MM/dd HH:mm:ss" ]
+    target => "@timestamp"
+    timezone => "+01:00"
+    #23/Nov/2022:12:37:53
+    }
+  if "_dateparsefailure" in [tags]{
+    grok{
+      match => ["[time]","%{YEAR:YYYY}/%{MONTHNUM:MM}/%{MONTHDAY:dd}:%{HOUR:hh}:%{MINUTE:mm}:%{SECOND:ss} %{GREEDYDATA}}"]
+      add_tag => [ "eventlog_timestamp_grokked" ]
+    }
+    if "_grokparsefailure" not in[tags] {
+    mutate {
+    add_field => [ "[event][created]", "%{YYYY}-%{MM}-%{dd} %{hh}:%{mm}:%{ss}" ]
+    }
+    date {
+      match => ["[event][created]", "ISO8601", "YYYY-MM-dd HH:mm:ss" ]
+      target => "@timestamp"
+    }
+    }
+  }
+  mutate {
+    remove_field => ["kv", "time","originalmessage", "mymessage", "message","[event][original]", "a", "b", "c", "d", "e", "f"]
+    add_field => ["[event][timezone]" , "UTC"]
+  }
+}
